@@ -25,4 +25,4 @@ RUN mkdir -p .cache
 
 EXPOSE 5555
 
-CMD ["sh", "-c", "uv run uvicorn app.main:app --host ${VS_SERVER_HOST:-0.0.0.0} --port ${VS_SERVER_PORT:-5555}"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "${VS_SERVER_HOST:-0.0.0.0}", "--port", "${VS_SERVER_PORT:-5555}"]
