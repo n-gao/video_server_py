@@ -22,7 +22,9 @@ def get_file_path(season: int, episode: str) -> str:
 
     if episode_minor.isalpha():
         episode_major = int(episode[:-1])
-        filename = f"s{season:02d}e{episode_major:02d}{episode_minor}{video_settings.format}"
+        filename = (
+            f"s{season:02d}e{episode_major:02d}{episode_minor}{video_settings.format}"
+        )
     else:
         episode_major = int(episode)
         filename = f"s{season:02d}e{episode_major:02d}{video_settings.format}"

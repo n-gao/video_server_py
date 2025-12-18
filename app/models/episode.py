@@ -7,6 +7,6 @@ class Episode(BaseModel):
     id: ObjectIdStr = Field(alias="_id")
     title: str
     season: int
-    episode_number: str = Field(alias="episode")
+    episode: str
 
     model_config = {"populate_by_name": True}

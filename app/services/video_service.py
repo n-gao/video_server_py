@@ -43,7 +43,9 @@ class VideoService:
         self._check_cache_size()
 
         # Generate cache file path
-        cache_filename = f"{sha256_hash(file_path)}_{start}_{duration}.mp4".replace(",", "-")
+        cache_filename = f"{sha256_hash(file_path)}_{start}_{duration}.mp4".replace(
+            ",", "-"
+        )
         cache_file = Path(self.settings.folder) / cache_filename
 
         if cache_file.exists():
@@ -62,12 +64,18 @@ class VideoService:
             segment_path = cache_folder / "seg%d.mp4"
             args = [
                 self._ffmpeg,
-                "-v", "quiet",
-                "-i", file_path,
-                "-c", "copy",
-                "-ss", start_s,
-                "-t", duration_s,
-                "-f", "segment",
+                "-v",
+                "quiet",
+                "-i",
+                file_path,
+                "-c",
+                "copy",
+                "-ss",
+                start_s,
+                "-t",
+                duration_s,
+                "-f",
+                "segment",
                 "-y",
                 str(segment_path),
             ]
@@ -90,10 +98,14 @@ class VideoService:
             # Second pass: concatenate segments
             args = [
                 self._ffmpeg,
-                "-f", "concat",
-                "-safe", "0",
-                "-i", str(list_file),
-                "-c", "copy",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(list_file),
+                "-c",
+                "copy",
                 str(cache_file),
             ]
 
@@ -110,7 +122,9 @@ class VideoService:
 
         return str(cache_file)
 
-    async def read_to_stream(self, file_path: str, start: float, duration: float) -> str:
+    async def read_to_stream(
+        self, file_path: str, start: float, duration: float
+    ) -> str:
         """Returns path to the cached segment file."""
         cache_file = await self._get_segment(file_path, start, duration)
         return cache_file
@@ -127,11 +141,15 @@ class VideoService:
 
             args = [
                 self._ffmpeg,
-                "-ss", start_s,
-                "-i", file_path,
+                "-ss",
+                start_s,
+                "-i",
+                file_path,
                 "-an",
-                "-vframes", "1",
-                "-f", "image2pipe",
+                "-vframes",
+                "1",
+                "-f",
+                "image2pipe",
                 str(cache_path),
             ]
 
@@ -141,5 +159,6 @@ class VideoService:
                 stderr=asyncio.subprocess.DEVNULL,
             )
             await process.wait()
-
+            if process.returncode != 0:
+                raise FileNotFoundError(f"Could not create thumbnail for {file_path}")
         return str(cache_path)
