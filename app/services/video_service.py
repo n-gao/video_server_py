@@ -150,6 +150,7 @@ class VideoService:
                 "1",
                 "-f",
                 "image2pipe",
+                "-y",
                 str(cache_path),
             ]
 
