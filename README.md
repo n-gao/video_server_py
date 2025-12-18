@@ -35,8 +35,6 @@ docker compose up -d
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `VS_SERVER_HOST` | `0.0.0.0` | Server host |
-| `VS_SERVER_PORT` | `5555` | Server port |
 | `VS_DB_CONNECTION_STRING` | `mongodb://localhost:27017` | MongoDB connection string |
 | `VS_DB_DATABASE_NAME` | `sponge_db` | Database name |
 | `VS_DB_QUOTE_COLLECTION_NAME` | `quotes` | Quotes collection |

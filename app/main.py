@@ -36,8 +36,6 @@ def main():
 
     uvicorn.run(
         "app.main:app",
-        host=settings.server.host,
-        port=settings.server.port,
         reload=True,
     )
 

@@ -36,18 +36,7 @@ class VideoSettings(BaseSettings):
     }
 
 
-class ServerSettings(BaseSettings):
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=5555)
-
-    model_config = {
-        "env_prefix": f"{ENV_PREFIX}SERVER_",
-        "extra": "ignore",
-    }
-
-
 class Settings(BaseSettings):
-    server: ServerSettings = Field(default_factory=ServerSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
     video: VideoSettings = Field(default_factory=VideoSettings)
