@@ -61,7 +61,7 @@ class VideoService:
             duration_s = f"{duration:.2f}"
 
             # First pass: segment the video
-            segment_path = cache_folder / "seg%d.mp4"
+            segment_path = cache_folder / "seg%03d.mp4"
             args = [
                 self._ffmpeg,
                 "-v",
