@@ -15,5 +15,9 @@ dependencies = [
 [project.scripts]
 video-server = "app.main:main"
 
-[tool.uv]
-dev-dependencies = []
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "httpx>=0.28",
+]

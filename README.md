@@ -90,7 +90,7 @@ Pre-built multiplatform images (amd64/arm64) are published to `ghcr.io` on every
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VS_DB_CONNECTION_STRING` | `mongodb://localhost:27017` | MongoDB connection string |
-| `VS_DB_DATABASE_NAME` | `sponge_db` | Database name |
+| `VS_DB_DATABASE_NAME` | `video_server` | Database name |
 | `VS_DB_QUOTE_COLLECTION_NAME` | `quotes` | Quotes collection name |
 | `VS_DB_EPISODE_COLLECTION_NAME` | `episodes` | Episodes collection name |
 | `VS_CACHE_FOLDER` | `.cache` | Cache directory for extracted clips/thumbnails |

@@ -8,7 +8,7 @@ class DatabaseSettings(BaseSettings):
     episode_collection_name: str = Field(default="episodes")
     quote_collection_name: str = Field(default="quotes")
     connection_string: str = Field(default="mongodb://localhost:27017")
-    database_name: str = Field(default="sponge_db")
+    database_name: str = Field(default="video_server")
 
     model_config = {
         "env_prefix": f"{ENV_PREFIX}DB_",
