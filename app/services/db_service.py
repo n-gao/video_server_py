@@ -11,17 +11,20 @@ class DbService:
         self.quotes = self.db[settings.quote_collection_name]
         self.episodes = self.db[settings.episode_collection_name]
 
-    async def search_quotes(self, query: str, num_results: int) -> List[QuoteResult]:
+    async def search_quotes(
+        self, query: str, num_results: int, offset: int = 0
+    ) -> List[QuoteResult]:
         # Build text search filter with German language
         text_filter = {"$text": {"$search": query, "$language": "german"}}
 
         # Project with text score
         projection = {"MatchingScore": {"$meta": "textScore"}}
 
-        # Execute query with text score sorting
+        # Execute query with text score sorting and pagination
         cursor = (
             self.quotes.find(text_filter, projection)
             .sort([("MatchingScore", {"$meta": "textScore"})])
+            .skip(offset)
             .limit(num_results)
         )
 
