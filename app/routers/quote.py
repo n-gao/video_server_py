@@ -37,12 +37,12 @@ async def get_search_results(
 
     Args:
         query: Search query string
-        num_results: Maximum number of results to return (1-20, default: 10)
+        num_results: Maximum number of results to return (default: 10)
         offset: Number of results to skip for pagination (default: 0)
 
     Returns:
         List of matching quotes with episode information
     """
-    # Clamp numResults to valid range (1-20)
-    num_results = max(1, min(20, num_results))
+    # Clamp numResults to valid range
+    num_results = max(1, min(settings.search.max_results, num_results))
     return await db_service.search_quotes(query, num_results, offset)

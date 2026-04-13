@@ -36,10 +36,20 @@ class VideoSettings(BaseSettings):
     }
 
 
+class SearchSettings(BaseSettings):
+    max_results: int = Field(default=20)
+
+    model_config = {
+        "env_prefix": f"{ENV_PREFIX}SEARCH_",
+        "extra": "ignore",
+    }
+
+
 class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     cache: CacheSettings = Field(default_factory=CacheSettings)
     video: VideoSettings = Field(default_factory=VideoSettings)
+    search: SearchSettings = Field(default_factory=SearchSettings)
 
     model_config = {
         "extra": "ignore",
