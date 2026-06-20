@@ -115,6 +115,59 @@ class TestGetSegment:
         assert all(e.is_file() for e in entries)
 
 
+class TestExactSegment:
+    @pytest.mark.asyncio
+    async def test_exact_cache_filename_has_suffix(self, service, cache_dir):
+        cache_dir.mkdir(parents=True)
+        from app.services.video_service import sha256_hash
+
+        expected_name = f"{sha256_hash('video.mp4')}_{10.0}_{20.0}_exact.mp4"
+        expected_path = cache_dir / expected_name
+        expected_path.write_bytes(b"cached")
+
+        result = await service._get_segment("video.mp4", 10.0, 20.0, exact=True)
+        assert result == str(expected_path)
+
+    @pytest.mark.asyncio
+    async def test_exact_transcodes_single_pass(self, service, cache_dir):
+        cache_dir.mkdir(parents=True)
+        captured = {}
+
+        async def fake_ffmpeg(*args, **kwargs):
+            proc = MagicMock()
+            proc.wait = AsyncMock()
+            proc.returncode = 0
+            captured["args"] = args
+            Path(args[-1]).write_bytes(b"transcoded")
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", side_effect=fake_ffmpeg):
+            result = await service.read_to_stream("video.mp4", 10.0, 20.0, exact=True)
+
+        assert Path(result).exists()
+        assert result.endswith("_exact.mp4")
+        # Re-encode, not stream copy
+        assert "libx264" in captured["args"]
+        assert "aac" in captured["args"]
+        assert "copy" not in captured["args"]
+        # No leftover temp dirs — transcode writes the cache file directly
+        assert all(e.is_file() for e in cache_dir.iterdir())
+
+    @pytest.mark.asyncio
+    async def test_exact_raises_on_ffmpeg_failure(self, service, cache_dir):
+        cache_dir.mkdir(parents=True)
+
+        async def failing_ffmpeg(*args, **kwargs):
+            proc = MagicMock()
+            proc.wait = AsyncMock()
+            proc.returncode = 1
+            return proc
+
+        with patch("asyncio.create_subprocess_exec", side_effect=failing_ffmpeg):
+            with pytest.raises(FileNotFoundError):
+                await service.read_to_stream("video.mp4", 10.0, 20.0, exact=True)
+
+
 class TestGetThumbnail:
     @pytest.mark.asyncio
     async def test_cache_hit(self, service, cache_dir):

@@ -36,8 +36,9 @@ def get_file_path(season: int, episode: str) -> str:
 async def get_video(
     season: int,
     episode: str,
-    start: float = Query(default=0),
+    start: float,
     duration: float = Query(default=20),
+    exact: bool = Query(default=False),
     video_service: VideoService = Depends(get_video_service),
 ):
     """Get a video segment for the specified season and episode.
@@ -47,12 +48,16 @@ async def get_video(
         episode: Episode identifier (e.g., "1", "1a")
         start: Start time in seconds (default: 0)
         duration: Duration in seconds (default: 20)
+        exact: Trim at exact frames via transcoding instead of snipping at the
+            closest keyframes (default: False)
 
     Returns:
         Video file stream (video/mp4)
     """
     file_path = get_file_path(season, episode)
-    cache_file = await video_service.read_to_stream(file_path, start, duration)
+    cache_file = await video_service.read_to_stream(
+        file_path, start, duration, exact=exact
+    )
     return FileResponse(cache_file, media_type="video/mp4")
 
 
@@ -60,7 +65,7 @@ async def get_video(
 async def get_thumbnail(
     season: int,
     episode: str,
-    timestamp: float = Query(default=2),
+    timestamp: float,
     video_service: VideoService = Depends(get_video_service),
 ):
     """Get a thumbnail image for the specified season and episode.

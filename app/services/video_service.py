@@ -38,17 +38,27 @@ class VideoService:
                     pass
 
     async def _get_segment(
-        self, file_path: str, start: float, duration: float, tolerance: float = 10
+        self,
+        file_path: str,
+        start: float,
+        duration: float,
+        tolerance: float = 10,
+        exact: bool = False,
     ) -> str:
         self._check_cache_size()
 
         # Generate cache file path
-        cache_filename = f"{sha256_hash(file_path)}_{start}_{duration}.mp4".replace(
-            ",", "-"
+        suffix = "_exact" if exact else ""
+        cache_filename = (
+            f"{sha256_hash(file_path)}_{start}_{duration}{suffix}.mp4".replace(",", "-")
         )
         cache_file = Path(self.settings.folder) / cache_filename
 
         if cache_file.exists():
+            return str(cache_file)
+
+        if exact:
+            await self._transcode_segment(file_path, start, duration, cache_file)
             return str(cache_file)
 
         # Create temporary folder for processing
@@ -122,11 +132,46 @@ class VideoService:
 
         return str(cache_file)
 
+    async def _transcode_segment(
+        self, file_path: str, start: float, duration: float, cache_file: Path
+    ) -> None:
+        """Re-encode a frame-accurate segment instead of copying at keyframes."""
+        args = [
+            self._ffmpeg,
+            "-v",
+            "quiet",
+            "-ss",
+            f"{start:.2f}",
+            "-i",
+            file_path,
+            "-t",
+            f"{duration:.2f}",
+            "-c:v",
+            "libx264",
+            "-c:a",
+            "aac",
+            "-y",
+            str(cache_file),
+        ]
+
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await process.wait()
+        if process.returncode != 0:
+            raise FileNotFoundError(f"Could not transcode segment for {file_path}")
+
     async def read_to_stream(
-        self, file_path: str, start: float, duration: float
+        self, file_path: str, start: float, duration: float, exact: bool = False
     ) -> str:
-        """Returns path to the cached segment file."""
-        cache_file = await self._get_segment(file_path, start, duration)
+        """Returns path to the cached segment file.
+
+        When ``exact`` is True the segment is re-encoded for frame-accurate
+        trimming; otherwise it is stream-copied at the closest keyframes.
+        """
+        cache_file = await self._get_segment(file_path, start, duration, exact=exact)
         return cache_file
 
     async def get_thumbnail(self, file_path: str, timestamp: float) -> str:
