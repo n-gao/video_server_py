@@ -1,11 +1,12 @@
 import asyncio
 import hashlib
 import platform
-import shutil
-import uuid
 from pathlib import Path
 
 from ..config import CacheSettings
+
+# Tolerance for floating-point comparisons against keyframe timestamps (seconds).
+_EPS = 1e-3
 
 
 def sha256_hash(s: str) -> str:
@@ -37,100 +38,139 @@ class VideoService:
                 except OSError:
                     pass
 
+    async def _run_ffprobe(self, args: list[str]) -> str:
+        process = await asyncio.create_subprocess_exec(
+            self._ffprobe,
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await process.communicate()
+        return stdout.decode()
+
+    async def _probe_duration(self, path: str) -> float:
+        out = (
+            await self._run_ffprobe(
+                ["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0", path]
+            )
+        ).strip()
+        try:
+            return float(out)
+        except ValueError:
+            return 0.0
+
+    async def _probe_keyframes(self, file_path: str) -> list[float]:
+        """Return sorted video keyframe timestamps (seconds) from packet flags."""
+        out = await self._run_ffprobe(
+            [
+                "-v",
+                "quiet",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "packet=pts_time,flags",
+                "-of",
+                "csv=p=0",
+                file_path,
+            ]
+        )
+        times: list[float] = []
+        for line in out.splitlines():
+            parts = line.split(",")
+            if len(parts) >= 2 and "K" in parts[1]:
+                try:
+                    times.append(float(parts[0]))
+                except ValueError:
+                    pass
+        return sorted(times)
+
+    async def _keyframe_bounds(
+        self, file_path: str, start: float, duration: float
+    ) -> tuple[float, float]:
+        """Snap [start, start+duration] outward to enclosing keyframe boundaries.
+
+        Returns ``(actual_start, copy_end)`` in source-relative seconds. The
+        start is the latest keyframe at or before ``start`` (so the requested
+        moment is included); the end is the earliest keyframe at or after the
+        requested end, or the source duration if none is later.
+        """
+        keyframes = await self._probe_keyframes(file_path)
+        source_duration = await self._probe_duration(file_path)
+
+        before = [k for k in keyframes if k <= start + _EPS]
+        actual_start = before[-1] if before else (keyframes[0] if keyframes else 0.0)
+
+        desired_end = start + duration
+        after = [k for k in keyframes if k >= desired_end - _EPS]
+        copy_end = after[0] if after else source_duration
+
+        return actual_start, max(copy_end, actual_start)
+
     async def _get_segment(
         self,
         file_path: str,
         start: float,
         duration: float,
-        tolerance: float = 10,
         exact: bool = False,
-    ) -> str:
+    ) -> tuple[str, float, float]:
+        """Produce (and cache) a segment.
+
+        Returns ``(cache_path, actual_start, actual_duration)`` where the actual
+        values reflect what the produced clip really covers — identical to the
+        request when ``exact`` is True, snapped to keyframes otherwise.
+        """
         self._check_cache_size()
 
-        # Generate cache file path
         suffix = "_exact" if exact else ""
         cache_filename = (
             f"{sha256_hash(file_path)}_{start}_{duration}{suffix}.mp4".replace(",", "-")
         )
         cache_file = Path(self.settings.folder) / cache_filename
 
-        if cache_file.exists():
-            return str(cache_file)
-
         if exact:
-            await self._transcode_segment(file_path, start, duration, cache_file)
-            return str(cache_file)
+            if not cache_file.exists():
+                await self._transcode_segment(file_path, start, duration, cache_file)
+            actual_duration = await self._probe_duration(str(cache_file))
+            return str(cache_file), start, actual_duration
 
-        # Create temporary folder for processing
-        cache_folder = Path(self.settings.folder) / str(uuid.uuid4())
-        cache_folder.mkdir(parents=True, exist_ok=True)
+        actual_start, copy_end = await self._keyframe_bounds(file_path, start, duration)
 
-        try:
-            # Format start and duration for FFmpeg
-            start_s = f"{start - tolerance:.2f}"
-            duration_s = f"{duration:.2f}"
-
-            # First pass: segment the video
-            segment_path = cache_folder / "seg%03d.mp4"
-            args = [
-                self._ffmpeg,
-                "-v",
-                "quiet",
-                "-i",
-                file_path,
-                "-c",
-                "copy",
-                "-ss",
-                start_s,
-                "-t",
-                duration_s,
-                "-f",
-                "segment",
-                "-y",
-                str(segment_path),
-            ]
-
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+        if not cache_file.exists():
+            await self._copy_segment(
+                file_path, actual_start, copy_end - actual_start, cache_file
             )
-            await process.wait()
 
-            # Get segment files and create concat list (skip first segment)
-            segment_files = sorted(cache_folder.glob("seg*.mp4"))
-            list_file = cache_folder / "list.txt"
+        actual_duration = await self._probe_duration(str(cache_file))
+        return str(cache_file), actual_start, actual_duration
 
-            with open(list_file, "w") as f:
-                for seg in segment_files[1:]:
-                    f.write(f"file '{seg.absolute()}'\n")
+    async def _copy_segment(
+        self, file_path: str, start: float, duration: float, cache_file: Path
+    ) -> None:
+        """Stream-copy a segment starting at a keyframe (no re-encode)."""
+        args = [
+            self._ffmpeg,
+            "-v",
+            "quiet",
+            "-ss",
+            f"{start:.3f}",
+            "-i",
+            file_path,
+            "-t",
+            f"{duration:.3f}",
+            "-c",
+            "copy",
+            "-y",
+            str(cache_file),
+        ]
 
-            # Second pass: concatenate segments
-            args = [
-                self._ffmpeg,
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                str(list_file),
-                "-c",
-                "copy",
-                str(cache_file),
-            ]
-
-            process = await asyncio.create_subprocess_exec(
-                *args,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await process.wait()
-
-        finally:
-            # Clean up temporary folder
-            shutil.rmtree(cache_folder, ignore_errors=True)
-
-        return str(cache_file)
+        process = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await process.wait()
+        if process.returncode != 0:
+            raise FileNotFoundError(f"Could not extract segment for {file_path}")
 
     async def _transcode_segment(
         self, file_path: str, start: float, duration: float, cache_file: Path
@@ -165,14 +205,15 @@ class VideoService:
 
     async def read_to_stream(
         self, file_path: str, start: float, duration: float, exact: bool = False
-    ) -> str:
-        """Returns path to the cached segment file.
+    ) -> tuple[str, float, float]:
+        """Return ``(cache_path, actual_start, actual_duration)`` for a segment.
 
         When ``exact`` is True the segment is re-encoded for frame-accurate
-        trimming; otherwise it is stream-copied at the closest keyframes.
+        trimming and the actual bounds match the request. Otherwise it is
+        stream-copied at the enclosing keyframes, and the returned actual
+        start/duration tell the caller what the clip really covers.
         """
-        cache_file = await self._get_segment(file_path, start, duration, exact=exact)
-        return cache_file
+        return await self._get_segment(file_path, start, duration, exact=exact)
 
     async def get_thumbnail(self, file_path: str, timestamp: float) -> str:
         """Returns path to the cached thumbnail file."""

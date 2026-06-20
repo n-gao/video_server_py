@@ -41,25 +41,36 @@ class TestVideoEndpoint:
     def test_returns_video(self, client, mock_video_service, tmp_path):
         video_file = tmp_path / "clip.mp4"
         video_file.write_bytes(b"fake_video_data")
-        mock_video_service.read_to_stream = AsyncMock(return_value=str(video_file))
+        # (path, actual_start, actual_duration)
+        mock_video_service.read_to_stream = AsyncMock(
+            return_value=(str(video_file), 8.0, 24.0)
+        )
 
         resp = client.get("/api/video/1/5", params={"start": 10, "duration": 20})
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "video/mp4"
         assert resp.content == b"fake_video_data"
+        # Actual keyframe-snapped bounds are reported in headers
+        assert resp.headers["x-actual-start"] == "8.000"
+        assert resp.headers["x-actual-duration"] == "24.000"
         # Defaults to keyframe snipping
         assert mock_video_service.read_to_stream.call_args.kwargs["exact"] is False
 
     def test_exact_flag_forwarded(self, client, mock_video_service, tmp_path):
         video_file = tmp_path / "clip.mp4"
         video_file.write_bytes(b"fake_video_data")
-        mock_video_service.read_to_stream = AsyncMock(return_value=str(video_file))
+        mock_video_service.read_to_stream = AsyncMock(
+            return_value=(str(video_file), 10.0, 20.0)
+        )
 
         resp = client.get(
             "/api/video/1/5", params={"start": 10, "duration": 20, "exact": True}
         )
         assert resp.status_code == 200
         assert mock_video_service.read_to_stream.call_args.kwargs["exact"] is True
+        # exact bounds match the request
+        assert resp.headers["x-actual-start"] == "10.000"
+        assert resp.headers["x-actual-duration"] == "20.000"
 
 
 class TestThumbnailEndpoint:

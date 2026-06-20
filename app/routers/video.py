@@ -52,13 +52,25 @@ async def get_video(
             closest keyframes (default: False)
 
     Returns:
-        Video file stream (video/mp4)
+        Video file stream (video/mp4). The actual start and duration of the
+        returned clip are reported in the ``X-Actual-Start`` and
+        ``X-Actual-Duration`` response headers — for ``exact=False`` these are
+        snapped to keyframes and so may differ from the requested values.
     """
     file_path = get_file_path(season, episode)
-    cache_file = await video_service.read_to_stream(
+    cache_file, actual_start, actual_duration = await video_service.read_to_stream(
         file_path, start, duration, exact=exact
     )
-    return FileResponse(cache_file, media_type="video/mp4")
+    return FileResponse(
+        cache_file,
+        media_type="video/mp4",
+        headers={
+            "X-Actual-Start": f"{actual_start:.3f}",
+            "X-Actual-Duration": f"{actual_duration:.3f}",
+            # Allow browser JS (fetch) to read the custom headers cross-origin.
+            "Access-Control-Expose-Headers": "X-Actual-Start, X-Actual-Duration",
+        },
+    )
 
 
 @router.get("/thumbnail/{season}/{episode}")
