@@ -8,6 +8,10 @@ from ..config import CacheSettings
 # Tolerance for floating-point comparisons against keyframe timestamps (seconds).
 _EPS = 1e-3
 
+# How far before the end to clamp a thumbnail request, so a frame is still
+# available to capture (covers frame rates down to ~10fps).
+_THUMB_END_MARGIN = 0.1
+
 
 def sha256_hash(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
@@ -216,11 +220,36 @@ class VideoService:
         return await self._get_segment(file_path, start, duration, exact=exact)
 
     async def get_thumbnail(self, file_path: str, timestamp: float) -> str:
-        """Returns path to the cached thumbnail file."""
+        """Returns path to the cached thumbnail file.
+
+        An out-of-range ``timestamp`` is clamped to the nearest valid capture
+        time (the start for negative values, just before the end for values
+        past the video length) rather than raising.
+
+        Raises:
+            FileNotFoundError: if the source video cannot be read.
+        """
         self._check_cache_size()
 
-        cache_filename = f"{sha256_hash(file_path)}_{timestamp}.jpg"
-        cache_path = Path(self.settings.folder) / cache_filename
+        # Fast path: a thumbnail already cached for this exact request.
+        cache_path = (
+            Path(self.settings.folder) / f"{sha256_hash(file_path)}_{timestamp}.jpg"
+        )
+        if cache_path.exists():
+            return str(cache_path)
+
+        # Clamp the request into a capturable range. Probing the duration also
+        # tells us whether the source is readable at all.
+        duration = await self._probe_duration(file_path)
+        if duration <= 0:
+            raise FileNotFoundError(f"Could not read video {file_path}")
+        last_valid = max(0.0, duration - _THUMB_END_MARGIN)
+        timestamp = min(max(0.0, timestamp), last_valid)
+
+        # Recompute the cache path for the (possibly clamped) timestamp.
+        cache_path = (
+            Path(self.settings.folder) / f"{sha256_hash(file_path)}_{timestamp}.jpg"
+        )
 
         if not cache_path.exists():
             start_s = f"{timestamp:.2f}"

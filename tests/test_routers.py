@@ -83,3 +83,10 @@ class TestThumbnailEndpoint:
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "image/jpeg"
         assert resp.content == b"fake_jpeg_data"
+
+    def test_unreadable_source_returns_404(self, client, mock_video_service):
+        mock_video_service.get_thumbnail = AsyncMock(
+            side_effect=FileNotFoundError("Could not read video")
+        )
+        resp = client.get("/api/thumbnail/1/5", params={"timestamp": 2})
+        assert resp.status_code == 404

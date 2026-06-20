@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pathlib import Path
 from ..config import settings
@@ -91,5 +91,8 @@ async def get_thumbnail(
         JPEG image file stream (image/jpeg)
     """
     file_path = get_file_path(season, episode)
-    cache_file = await video_service.get_thumbnail(file_path, timestamp)
+    try:
+        cache_file = await video_service.get_thumbnail(file_path, timestamp)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     return FileResponse(cache_file, media_type="image/jpeg")

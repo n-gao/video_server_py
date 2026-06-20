@@ -1,5 +1,4 @@
 import os
-import asyncio
 from unittest.mock import AsyncMock, patch, MagicMock
 from pathlib import Path
 
@@ -216,13 +215,63 @@ class TestGetThumbnail:
     @pytest.mark.asyncio
     async def test_raises_on_ffmpeg_failure(self, service, cache_dir):
         cache_dir.mkdir(parents=True)
-
-        async def failing_ffmpeg(*args, **kwargs):
-            proc = MagicMock()
-            proc.wait = AsyncMock()
-            proc.returncode = 1
-            return proc
-
-        with patch("asyncio.create_subprocess_exec", side_effect=failing_ffmpeg):
+        fake = fake_subprocess(source_duration=30.0, returncode=1)
+        with patch("asyncio.create_subprocess_exec", side_effect=fake):
             with pytest.raises(FileNotFoundError):
                 await service.get_thumbnail("video.mp4", 2.0)
+
+    @pytest.mark.asyncio
+    async def test_clamps_negative_timestamp_to_start(self, service, cache_dir):
+        cache_dir.mkdir(parents=True)
+        captured = {}
+        fake = fake_subprocess(source_duration=30.0)
+
+        async def wrapped(*args, **kwargs):
+            if "ffprobe" not in str(args[0]):
+                captured["ffmpeg"] = args
+            return await fake(*args, **kwargs)
+
+        with patch("asyncio.create_subprocess_exec", side_effect=wrapped):
+            result = await service.get_thumbnail("video.mp4", -5.0)
+
+        assert Path(result).exists()
+        # Captures at the start, and caches under the clamped value
+        assert "0.00" in captured["ffmpeg"]
+        assert result.endswith("_0.0.jpg")
+
+    @pytest.mark.asyncio
+    async def test_clamps_timestamp_past_end(self, service, cache_dir):
+        cache_dir.mkdir(parents=True)
+        captured = {}
+        fake = fake_subprocess(source_duration=30.0)
+
+        async def wrapped(*args, **kwargs):
+            if "ffprobe" not in str(args[0]):
+                captured["ffmpeg"] = args
+            return await fake(*args, **kwargs)
+
+        with patch("asyncio.create_subprocess_exec", side_effect=wrapped):
+            result = await service.get_thumbnail("video.mp4", 45.0)
+
+        assert Path(result).exists()
+        # Clamped to just before the end (duration - margin = 29.9)
+        assert "29.90" in captured["ffmpeg"]
+        assert result.endswith("_29.9.jpg")
+
+    @pytest.mark.asyncio
+    async def test_unreadable_source_raises_not_found(self, service, cache_dir):
+        cache_dir.mkdir(parents=True)
+        # Probe returns no duration -> source can't be read.
+        fake = fake_subprocess(source_duration=0.0)
+        with patch("asyncio.create_subprocess_exec", side_effect=fake):
+            with pytest.raises(FileNotFoundError):
+                await service.get_thumbnail("video.mp4", 2.0)
+
+    @pytest.mark.asyncio
+    async def test_valid_timestamp_generates(self, service, cache_dir):
+        cache_dir.mkdir(parents=True)
+        fake = fake_subprocess(source_duration=30.0)
+        with patch("asyncio.create_subprocess_exec", side_effect=fake):
+            result = await service.get_thumbnail("video.mp4", 2.0)
+        assert Path(result).exists()
+        assert result.endswith(".jpg")
